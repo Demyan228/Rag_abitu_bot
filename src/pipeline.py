@@ -8,10 +8,10 @@ import pandas as pd
 import yaml
 
 from src.pdf_parsing import PDFParser
-# from src.parsed_reports_merging import PageTextPreparation
-# from src.text_splitter import TextSplitter
-# from src.ingestion import VectorDBIngestor
-# from src.ingestion import BM25Ingestor
+from src.parsed_documents_merging import PageTextPreparation
+from src.text_splitter import TextSplitter
+from src.ingestion import VectorDBIngestor
+from src.ingestion import BM25Ingestor
 # from src.questions_processing import QuestionsProcessor
 # from src.tables_serialization import TableSerializer
 from src.url_parsing import URLParser
@@ -134,56 +134,56 @@ class Pipeline:
     #         max_workers=max_workers
     #     )
 
-    # def merge_documents(self):
-    #     """Merge complex JSON documents into a simpler structure with a list of pages, where all text blocks are combined into a single string."""
-    #     ptp = PageTextPreparation(use_serialized_tables=self.run_config.use_serialized_tables)
-    #     _ = ptp.process_documents(
-    #         input_dir=self.paths.parsed_documents_path,
-    #         output_dir=self.paths.merged_documents_path
-    #     )
-    #     print(f"Documents saved to {self.paths.merged_documents_path}")
+    def merge_documents(self):
+        """Merge complex JSON documents into a simpler structure with a list of pages, where all text blocks are combined into a single string."""
+        ptp = PageTextPreparation(use_serialized_tables=self.run_config.use_serialized_tables)
+        _ = ptp.process_documents(
+            input_dir=self.paths.parsed_documents_path,
+            output_dir=self.paths.merged_documents_path
+        )
+        print(f"Documents saved to {self.paths.merged_documents_path}")
 
-    # def export_documents_to_markdown(self):
-    #     """Export processed documents to markdown format for review."""
-    #     ptp = PageTextPreparation(use_serialized_tables=self.run_config.use_serialized_tables)
-    #     ptp.export_to_markdown(
-    #         documents_dir=self.paths.parsed_documents_path,
-    #         output_dir=self.paths.documents_markdown_path
-    #     )
-    #     print(f"Documents saved to {self.paths.documents_markdown_path}")
+    def export_documents_to_markdown(self):
+        """Export processed documents to markdown format for review."""
+        ptp = PageTextPreparation(use_serialized_tables=self.run_config.use_serialized_tables)
+        ptp.export_to_markdown(
+            documents_dir=self.paths.parsed_documents_path,
+            output_dir=self.paths.documents_markdown_path
+        )
+        print(f"Documents saved to {self.paths.documents_markdown_path}")
 
-    # def chunk_documents(self, include_serialized_tables: bool = False):
-    #     """Split processed documents into smaller chunks for better processing."""
-    #     text_splitter = TextSplitter()
-    #
-    #     serialized_tables_dir = None
-    #     if include_serialized_tables:
-    #         serialized_tables_dir = self.paths.parsed_documents_path
-    #
-    #     text_splitter.split_all_documents(
-    #         self.paths.merged_documents_path,
-    #         self.paths.documents_dir,
-    #         serialized_tables_dir
-    #     )
-    #     print(f"Chunked documents saved to {self.paths.documents_dir}")
+    def chunk_documents(self, include_serialized_tables: bool = False):
+        """Split processed documents into smaller chunks for better processing."""
+        text_splitter = TextSplitter()
 
-    # def create_vector_db(self):
-    #     """Create a vector database from all chunked documents."""
-    #     input_dir = self.paths.documents_dir
-    #     output_dir = self.paths.vector_db_dir
-    #
-    #     vdb_ingestor = VectorDBIngestor()
-    #     vdb_ingestor.process_documents(input_dir, output_dir)
-    #     print(f"Vector databases created in {output_dir}")
+        serialized_tables_dir = None
+        if include_serialized_tables:
+            serialized_tables_dir = self.paths.parsed_documents_path
 
-    # def create_bm25_db(self):
-    #     """Create a BM25 database from all chunked documents."""
-    #     input_dir = self.paths.documents_dir
-    #     output_file = self.paths.bm25_db_path
-    #
-    #     bm25_ingestor = BM25Ingestor()
-    #     bm25_ingestor.process_documents(input_dir, output_file)
-    #     print(f"BM25 database created at {output_file}")
+        text_splitter.split_all_documents(
+            self.paths.merged_documents_path,
+            self.paths.documents_dir,
+            serialized_tables_dir
+        )
+        print(f"Chunked documents saved to {self.paths.documents_dir}")
+
+    def create_vector_db(self):
+        """Create a vector database from all chunked documents."""
+        input_dir = self.paths.documents_dir
+        output_dir = self.paths.vector_db_dir
+
+        vdb_ingestor = VectorDBIngestor()
+        vdb_ingestor.process_documents(input_dir, output_dir)
+        print(f"Vector databases created in {output_dir}")
+
+    def create_bm25_db(self):
+        """Create a BM25 database from all chunked documents."""
+        input_dir = self.paths.documents_dir
+        output_file = self.paths.bm25_db_path
+
+        bm25_ingestor = BM25Ingestor()
+        bm25_ingestor.process_documents(input_dir, output_file)
+        print(f"BM25 database created at {output_file}")
 
     def parse_pdf_documents(self, parallel: bool = True, chunk_size: int = 2, max_workers: int = 10):
         if parallel:
@@ -457,7 +457,7 @@ if __name__ == "__main__":
     # It also stores raw output of docling in debug/data_01_parsed_reports_debug, these jsons contain a LOT of metadata, and not used anywhere
     #pipeline.parse_pdf_documents_sequential()
 
-    pipeline.parse_urls(root_path, "links.yaml")
+    #pipeline.parse_urls(root_path, "links.yaml")
 
     # This method should be called only if you want run configs with serialized tables
     # It modifies the jsons in the debug/data_01_parsed_reports, adding a new field "serialized_table" to each table
@@ -465,19 +465,19 @@ if __name__ == "__main__":
 
     # This method converts jsons from the debug/data_01_parsed_reports into much simpler jsons, that is a list of pages in markdown
     # New jsons can be found in debug/data_02_merged_reports
-    # pipeline.merge_documents()
+    #pipeline.merge_documents()
 
     # This method exports the reports into plain markdown format. They used only for review and for full text search config: gemini_thinking_config
     # New files can be found in debug/data_03_reports_markdown
-    # pipeline.export_documents_to_markdown()
+    #pipeline.export_documents_to_markdown()
 
     # This method splits the reports into chunks, that are used for vectorization
     # New jsons can be found in databases/chunked_reports
-    # pipeline.chunk_documents()
+    #pipeline.chunk_documents()
 
     # This method creates vector databases from the chunked reports
     # New files can be found in databases/vector_dbs
-    # pipeline.create_vector_db()
+    #pipeline.create_vector_db()
 
     # This method processes the questions and answers
     # Questions processing logic depends on the run_config
