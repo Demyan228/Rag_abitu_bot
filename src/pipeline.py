@@ -16,6 +16,8 @@ from src.ingestion import BM25Ingestor
 # from src.tables_serialization import TableSerializer
 from src.url_parsing import URLParser
 
+from src.retrieval import HybridRetriever
+
 
 @dataclass
 class PipelineConfig:
@@ -478,6 +480,13 @@ if __name__ == "__main__":
     # This method creates vector databases from the chunked reports
     # New files can be found in databases/vector_dbs
     #pipeline.create_vector_db()
+
+    # question = "Какой проходной балл на бюджет в 2025 году на программу «Программная инженерия» в Москве?"
+    # retr = HybridRetriever(pipeline.paths.vector_db_dir)
+    # retrieval_results  = retr.retrieve(question, llm_reranking_sample_size=pipeline.run_config.llm_reranking_sample_size, top_n=5)
+    # for i in retrieval_results:
+    #     print(i)
+    #     print("*" * 80)
 
     # This method processes the questions and answers
     # Questions processing logic depends on the run_config
