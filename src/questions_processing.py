@@ -384,6 +384,7 @@ class QuestionsProcessor:
             submission_file=submission_file,
             pipeline_details=pipeline_details
         )
+        result["true_answers"] = [question_data.get("a") for question_data in self.questions]
         return result
 
     def process_comparative_question(self, question: str, sub_questions: List[str]) -> dict:

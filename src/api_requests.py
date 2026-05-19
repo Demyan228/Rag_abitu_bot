@@ -445,22 +445,6 @@ class APIProcessor:
             user_prompt = prompts.AnswerWithRAGContextPrompt.user_prompt
         return system_prompt, response_format, user_prompt
 
-    def get_rephrased_questions(self, original_question: str, companies: List[str]) -> Dict[str, str]:
-        """Use LLM to break down a comparative question into individual questions."""
-        answer_dict = self.processor.send_message(
-            system_content=prompts.RephrasedQuestionsPrompt.system_prompt,
-            human_content=prompts.RephrasedQuestionsPrompt.user_prompt.format(
-                question=original_question,
-                companies=", ".join([f'"{company}"' for company in companies])
-            ),
-            is_structured=True,
-            response_format=prompts.RephrasedQuestionsPrompt.RephrasedQuestions
-        )
-        
-        # Convert the answer_dict to the desired format
-        questions_dict = {item["company_name"]: item["question"] for item in answer_dict["questions"]}
-        
-        return questions_dict
     def get_sub_questions(self, question: str) -> List[str]:
         """Ask LLM whether question should be decomposed and return sub-questions if needed."""
         answer_dict = self.processor.send_message(
@@ -475,6 +459,46 @@ class APIProcessor:
 
         sub_questions = [q.strip() for q in answer_dict.get("sub_questions", []) if isinstance(q, str) and q.strip()]
         return sub_questions
+
+    def get_answers_similarity(
+            self,
+            questions: List[str],
+            pipeline_answers: List[str],
+            true_answers: List[str],
+            model: Optional[str] = None
+    ) -> List[Dict]:
+        """Evaluate semantic similarity between predicted and true answers using LLM."""
+        if self.provider != "openai":
+            raise NotImplementedError("get_answers_similarity is currently implemented only for openai provider.")
+
+        if not (len(questions) == len(pipeline_answers) == len(true_answers)):
+            raise ValueError("questions, pipeline_answers and true_answers must have the same length.")
+
+        if model is None:
+            model = self.processor.default_model
+
+        results: List[Dict] = []
+        for question, pipeline_answer, true_answer in zip(questions, pipeline_answers, true_answers):
+            score_dict = self.processor.send_message(
+                model=model,
+                system_content=prompts.AnswersSimilarityPrompt.system_prompt,
+                human_content=prompts.AnswersSimilarityPrompt.user_prompt.format(
+                    question=question,
+                    pipeline_answer=pipeline_answer,
+                    true_answer=true_answer
+                ),
+                is_structured=True,
+                response_format=prompts.AnswersSimilarityPrompt.SimilaritySchema
+            )
+            self.response_data = self.processor.response_data
+            results.append({
+                "question": question,
+                "pipeline_answer": pipeline_answer,
+                "true_answer": true_answer,
+                "score": score_dict.get("score"),
+                "explanation": score_dict.get("explanation"),
+            })
+        return results
 
 
 

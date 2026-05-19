@@ -293,6 +293,60 @@ Instructions:
 """
 
 
+class AnswersSimilarityPrompt:
+    instruction = """
+You are an evaluator for question answering quality.
+Given a question, a pipeline answer, and a reference (true) answer, evaluate how semantically close the pipeline answer is to the reference.
+
+Rules:
+- Focus on factual correctness and semantic equivalence.
+- Minor phrasing differences should not reduce the score significantly.
+- Penalize incorrect facts, missing key details, or contradictions.
+- If pipeline answer is "N/A" and true answer is available, score should be very low.
+- Return a score from 0.0 to 1.0 and a short explanation.
+
+Scoring scale (use increments of 0.1):
+- 0.0 = Completely incorrect: answer does not match reference meaning at all or is fully contradictory.
+- 0.1 = Almost completely incorrect: only an accidental/vague overlap without useful correctness.
+- 0.2 = Very weak match: tiny fragment is related, most of the meaning is wrong or missing.
+- 0.3 = Weak match: small part is correct, but key facts are incorrect or absent.
+- 0.4 = Limited match: some relevant elements, but substantial factual gaps/errors remain.
+- 0.5 = Partial match: about half of key meaning is correct, with notable omissions/inaccuracies.
+- 0.6 = Fair match: mostly correct direction, but lacks important details or has minor factual issues.
+- 0.7 = Good match: largely correct meaning with only limited omissions/inexactness.
+- 0.8 = Very good match: close to reference, only small non-critical differences.
+- 0.9 = Near-equivalent: almost identical meaning, tiny phrasing/detail differences only.
+- 1.0 = Fully equivalent: semantically the same as the true answer.
+"""
+
+    user_prompt = """
+Question:
+\"\"\"
+{question}
+\"\"\"
+
+Pipeline answer:
+\"\"\"
+{pipeline_answer}
+\"\"\"
+
+True answer:
+\"\"\"
+{true_answer}
+\"\"\"
+"""
+
+    class SimilaritySchema(BaseModel):
+        score: float = Field(description="Semantic correctness score from 0.0 to 1.0.")
+        explanation: str = Field(description="Short justification for the assigned score.")
+
+    pydantic_schema = re.sub(r"^ {4}", "", inspect.getsource(SimilaritySchema), flags=re.MULTILINE)
+    system_prompt = build_system_prompt(instruction)
+    system_prompt_with_schema = build_system_prompt(instruction, pydantic_schema=pydantic_schema)
+
+
+
+
 class RetrievalRankingSingleBlock(BaseModel):
     """Rank retrieved text block relevance to a query."""
     reasoning: str = Field(

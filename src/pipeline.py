@@ -16,6 +16,7 @@ from src.questions_processing import QuestionsProcessor
 # from src.tables_serialization import TableSerializer
 from src.url_parsing import URLParser
 
+from src.api_requests import APIProcessor
 from src.retrieval import HybridRetriever
 
 
@@ -293,6 +294,53 @@ class Pipeline:
         )
         print(f"Answers saved to {output_path}")
 
+    def evaluate_answers_similarity(self):
+        processor = QuestionsProcessor(
+            vector_db_dir=self.paths.vector_db_dir,
+            documents_dir=self.paths.documents_dir,
+            questions_file_path=self.paths.questions_file_path,
+            new_challenge_pipeline=True,
+            subset_path=self.paths.subset_path,
+            parent_document_retrieval=self.run_config.parent_document_retrieval,
+            llm_reranking=self.run_config.llm_reranking,
+            llm_reranking_sample_size=self.run_config.llm_reranking_sample_size,
+            top_n_retrieval=self.run_config.top_n_retrieval,
+            parallel_requests=self.run_config.parallel_requests,
+            api_provider=self.run_config.api_provider,
+            answering_model=self.run_config.answering_model,
+            full_context=self.run_config.full_context
+        )
+
+        processing_result = processor.process_all_questions(
+            output_path=self._get_next_available_filename(self.paths.answers_file_path),
+            submission_file=self.run_config.submission_file,
+            pipeline_details=self.run_config.pipeline_details
+        )
+
+        questions = [item.get("q") for item in processor.questions]
+        pipeline_answers = [item.get("value") for item in processing_result.get("questions", [])]
+        true_answers = processing_result.get("true_answers", [])
+
+        api_processor = APIProcessor(provider=self.run_config.api_provider)
+        similarity_results = api_processor.get_answers_similarity(
+            questions=questions,
+            pipeline_answers=pipeline_answers,
+            true_answers=true_answers,
+            model=self.run_config.answering_model
+        )
+
+        scores = [item.get("score", 0.0) for item in similarity_results if item.get("score") is not None]
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        print(f"Average answer similarity score: {avg_score:.4f}")
+        print("Per-question similarity:")
+        for item in similarity_results:
+            print(
+                f"- Q: {item['question']}\n"
+                f"  score: {item['score']}\n"
+                f"  explanation: {item['explanation']}"
+            )
+        return similarity_results
+
 
 preprocess_configs = {"ser_tab": RunConfig(use_serialized_tables=True),
                       "no_ser_tab": RunConfig(use_serialized_tables=False)}
@@ -489,3 +537,5 @@ if __name__ == "__main__":
     # This method processes the questions and answers
     # Questions processing logic depends on the run_config
     # pipeline.process_questions()
+
+    pipeline.evaluate_answers_similarity()
