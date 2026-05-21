@@ -638,11 +638,11 @@ if __name__ == "__main__":
 
     # This method should be called only if you want run configs with serialized tables
     # It modifies the jsons in the debug/data_01_parsed_reports, adding a new field "serialized_table" to each table
-    pipeline.serialize_tables(max_workers=5)
+    #pipeline.serialize_tables(max_workers=5)
 
     # This method converts jsons from the debug/data_01_parsed_reports into much simpler jsons, that is a list of pages in markdown
     # New jsons can be found in debug/data_02_merged_reports
-    #pipeline.merge_documents()
+    # pipeline.merge_documents()
 
     # This method exports the reports into plain markdown format. They used only for review and for full text search config: gemini_thinking_config
     # New files can be found in debug/data_03_reports_markdown
@@ -669,4 +669,4 @@ if __name__ == "__main__":
 
     #pipeline.evaluate_answers_similarity()
 
-    #pipeline.evaluate_rag_quality()
+    pipeline.evaluate_rag_quality()
