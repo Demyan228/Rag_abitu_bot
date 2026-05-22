@@ -12,26 +12,28 @@ import concurrent.futures
 
 class QuestionsProcessor:
     def __init__(
-        self,
-        vector_db_dir: Union[str, Path] = './vector_dbs',
-        documents_dir: Union[str, Path] = './documents',
-        questions_file_path: Optional[Union[str, Path]] = None,
-        new_challenge_pipeline: bool = False,
-        subset_path: Optional[Union[str, Path]] = None,
-        parent_document_retrieval: bool = False,
-        llm_reranking: bool = False,
-        llm_reranking_sample_size: int = 20,
-        top_n_retrieval: int = 10,
-        parallel_requests: int = 10,
-        api_provider: str = "openai",
-        answering_model: str = "gpt-4o-2024-08-06",
-        full_context: bool = False
+            self,
+            vector_db_dir: Union[str, Path] = './vector_dbs',
+            documents_dir: Union[str, Path] = './documents',
+            questions_file_path: Optional[Union[str, Path]] = None,
+            new_challenge_pipeline: bool = False,
+            subset_path: Optional[Union[str, Path]] = None,
+            parent_document_retrieval: bool = False,
+            llm_reranking: bool = False,
+            llm_reranking_sample_size: int = 20,
+            top_n_retrieval: int = 10,
+            parallel_requests: int = 10,
+            api_provider: str = "openai",
+            answering_model: str = "gpt-4o-2024-08-06",
+            full_context: bool = False,
+            is_chat_bot: bool = False
     ):
+        self.is_chat_bot = is_chat_bot
         self.questions = self._load_questions(questions_file_path)
         self.documents_dir = Path(documents_dir)
         self.vector_db_dir = Path(vector_db_dir)
         self.subset_path = Path(subset_path) if subset_path else None
-        
+
         self.new_challenge_pipeline = new_challenge_pipeline
         self.return_parent_pages = parent_document_retrieval
         self.llm_reranking = llm_reranking
@@ -48,23 +50,26 @@ class QuestionsProcessor:
         self._lock = threading.Lock()
 
     def _load_questions(self, questions_file_path: Optional[Union[str, Path]]) -> List[Dict[str, str]]:
+        if self.is_chat_bot:
+            return []
         if questions_file_path is None:
             return []
         qas_text = questions_file_path.read_text(encoding="utf-8")
-        return yaml.safe_load(qas_text)["easy_qa"]
+        questions = yaml.safe_load(qas_text)
+        return questions["qa"]
 
     def _format_retrieval_results(self, retrieval_results) -> str:
         """Format vector retrieval results into RAG context string"""
         if not retrieval_results:
             return ""
-        
+
         context_parts = []
         for result in retrieval_results:
             page_number = result['page']
             text = result['text']
             document_id = result.get('document_id', 'unknown')
             context_parts.append(f'Document {document_id}, page {page_number}: \n"""\n{text}\n"""')
-            
+
         return "\n\n---\n\n".join(context_parts)
 
     def _extract_references(self, retrieval_results: list) -> list:
@@ -86,38 +91,39 @@ class QuestionsProcessor:
             })
         return chunks
 
-    def _validate_page_references(self, claimed_pages: list, retrieval_results: list, min_pages: int = 2, max_pages: int = 8) -> list:
+    def _validate_page_references(self, claimed_pages: list, retrieval_results: list, min_pages: int = 2,
+                                  max_pages: int = 8) -> list:
         """
         Validate that all page numbers mentioned in the LLM's answer are actually from the retrieval results.
         If fewer than min_pages valid references remain, add top pages from retrieval results.
         """
         if claimed_pages is None:
             claimed_pages = []
-        
+
         retrieved_pages = [result['page'] for result in retrieval_results]
-        
+
         validated_pages = [page for page in claimed_pages if page in retrieved_pages]
-        
+
         if len(validated_pages) < len(claimed_pages):
             removed_pages = set(claimed_pages) - set(validated_pages)
             print(f"Warning: Removed {len(removed_pages)} hallucinated page references: {removed_pages}")
-        
+
         if len(validated_pages) < min_pages and retrieval_results:
             existing_pages = set(validated_pages)
-            
+
             for result in retrieval_results:
                 page = result['page']
                 if page not in existing_pages:
                     validated_pages.append(page)
                     existing_pages.add(page)
-                    
+
                     if len(validated_pages) >= min_pages:
                         break
-        
+
         if len(validated_pages) > max_pages:
             print(f"Trimming references from {len(validated_pages)} to {max_pages} pages")
             validated_pages = validated_pages[:max_pages]
-        
+
         return validated_pages
 
     def get_answer_for_query(self, question: str) -> dict:
@@ -188,10 +194,10 @@ class QuestionsProcessor:
         if print_stats:
             print(f"\nFinal Processing Statistics:")
             print(f"Total questions: {total_questions}")
-            print(f"Errors: {error_count} ({(error_count/total_questions)*100:.1f}%)")
-            print(f"N/A answers: {na_count} ({(na_count/total_questions)*100:.1f}%)")
-            print(f"Successfully answered: {success_count} ({(success_count/total_questions)*100:.1f}%)\n")
-        
+            print(f"Errors: {error_count} ({(error_count / total_questions) * 100:.1f}%)")
+            print(f"N/A answers: {na_count} ({(na_count / total_questions) * 100:.1f}%)")
+            print(f"Successfully answered: {success_count} ({(success_count / total_questions) * 100:.1f}%)\n")
+
         return {
             "total_questions": total_questions,
             "error_count": error_count,
@@ -199,7 +205,8 @@ class QuestionsProcessor:
             "success_count": success_count
         }
 
-    def process_questions_list(self, questions_list: List[dict], output_path: str = None, submission_file: bool = False, pipeline_details: str = "") -> dict:
+    def process_questions_list(self, questions_list: List[dict], output_path: str = None, submission_file: bool = False,
+                               pipeline_details: str = "") -> dict:
         total_questions = len(questions_list)
         # Add index to each question so we know where to write the answer details
         questions_with_index = [{**q, "_question_index": i} for i, q in enumerate(questions_list)]
@@ -212,22 +219,24 @@ class QuestionsProcessor:
                 processed_question = self._process_single_question(question_data)
                 processed_questions.append(processed_question)
                 if output_path:
-                    self._save_progress(processed_questions, output_path, submission_file=submission_file, pipeline_details=pipeline_details)
+                    self._save_progress(processed_questions, output_path, submission_file=submission_file,
+                                        pipeline_details=pipeline_details)
         else:
             with tqdm(total=total_questions, desc="Processing questions") as pbar:
                 for i in range(0, total_questions, parallel_threads):
-                    batch = questions_with_index[i : i + parallel_threads]
+                    batch = questions_with_index[i: i + parallel_threads]
                     with concurrent.futures.ThreadPoolExecutor(max_workers=parallel_threads) as executor:
                         # executor.map will return results in the same order as the input list.
                         batch_results = list(executor.map(self._process_single_question, batch))
                     processed_questions.extend(batch_results)
-                    
+
                     if output_path:
-                        self._save_progress(processed_questions, output_path, submission_file=submission_file, pipeline_details=pipeline_details)
+                        self._save_progress(processed_questions, output_path, submission_file=submission_file,
+                                            pipeline_details=pipeline_details)
                     pbar.update(len(batch_results))
-        
-        statistics = self._calculate_statistics(processed_questions, print_stats = True)
-        
+
+        statistics = self._calculate_statistics(processed_questions, print_stats=True)
+
         return {
             "questions": processed_questions,
             "answer_details": self.answer_details,
@@ -240,7 +249,7 @@ class QuestionsProcessor:
         question_text = question_data.get("q")
         try:
             answer_dict = self.process_question(question_text)
-            
+
             if "error" in answer_dict:
                 detail_ref = self._create_answer_detail_ref({
                     "step_by_step_analysis": None,
@@ -294,15 +303,15 @@ class QuestionsProcessor:
             "error_traceback": tb,
             "self": error_ref
         }
-        
+
         with self._lock:
             self.answer_details[question_index] = error_detail
-        
+
         print(f"Error encountered processing question: {question_text}")
         print(f"Error type: {type(err).__name__}")
         print(f"Error message: {error_message}")
         print(f"Full traceback:\n{tb}\n")
-        
+
         if self.new_challenge_pipeline:
             return {
                 "question_text": question_text,
@@ -327,12 +336,12 @@ class QuestionsProcessor:
         4. Include step_by_step_analysis from answer details
         """
         submission_answers = []
-        
+
         for q in processed_questions:
             question_text = q.get("question_text") or q.get("question")
             value = "N/A" if "error" in q else (q.get("value") if "value" in q else q.get("answer"))
             references = q.get("references", [])
-            
+
             answer_details_ref = q.get("answer_details", {}).get("$ref", "")
             step_by_step_analysis = None
             if answer_details_ref and answer_details_ref.startswith("#/answer_details/"):
@@ -342,7 +351,7 @@ class QuestionsProcessor:
                         step_by_step_analysis = self.answer_details[index].get("step_by_step_analysis")
                 except (ValueError, IndexError):
                     pass
-            
+
             # Clear references if value is N/A
             if value == "N/A":
                 references = []
@@ -355,24 +364,25 @@ class QuestionsProcessor:
                     }
                     for ref in references
                 ]
-            
+
             submission_answer = {
                 "question_text": question_text,
                 "value": value,
                 "references": references,
             }
-            
+
             if step_by_step_analysis:
                 submission_answer["reasoning_process"] = step_by_step_analysis
-            
+
             submission_answers.append(submission_answer)
-        
+
         return submission_answers
 
-    def _save_progress(self, processed_questions: List[dict], output_path: Optional[str], submission_file: bool = False, pipeline_details: str = ""):
+    def _save_progress(self, processed_questions: List[dict], output_path: Optional[str], submission_file: bool = False,
+                       pipeline_details: str = ""):
         if output_path:
             statistics = self._calculate_statistics(processed_questions)
-            
+
             # Prepare debug content
             result = {
                 "questions": processed_questions,
@@ -383,7 +393,7 @@ class QuestionsProcessor:
             debug_file = output_file.with_name(output_file.stem + "_debug" + output_file.suffix)
             with open(debug_file, 'w', encoding='utf-8') as file:
                 json.dump(result, file, ensure_ascii=False, indent=2)
-            
+
             if submission_file:
                 # Post-process answers for submission
                 submission_answers = self._post_process_submission_answers(processed_questions)
@@ -394,7 +404,8 @@ class QuestionsProcessor:
                 with open(output_file, 'w', encoding='utf-8') as file:
                     json.dump(submission, file, ensure_ascii=False, indent=2)
 
-    def process_all_questions(self, output_path: str = 'questions_with_answers.json', submission_file: bool = False, pipeline_details: str = ""):
+    def process_all_questions(self, output_path: str = 'questions_with_answers.json', submission_file: bool = False,
+                              pipeline_details: str = ""):
         result = self.process_questions_list(
             self.questions,
             output_path,

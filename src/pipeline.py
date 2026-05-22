@@ -69,6 +69,7 @@ class RunConfig:
     answering_model: str = "gpt-4o-mini-2024-07-18"  # or "gpt-4o-2024-08-06"
     config_suffix: str = ""
     cached_processing_result_file: str = ""
+    is_chat_bot: bool = False
 
 
 class Pipeline:
@@ -76,6 +77,7 @@ class Pipeline:
                  pdf_reports_dir_name: str = "pdf_docs", run_config: RunConfig = RunConfig()):
         self.run_config = run_config
         self.paths = self._initialize_paths(root_path, subset_name, questions_file_name, pdf_reports_dir_name)
+        self._chat_questions_processor = None
 
     def _initialize_paths(self, root_path: Path, subset_name: str, questions_file_name: str,
                           pdf_reports_dir_name: str) -> PipelineConfig:
@@ -297,6 +299,8 @@ class Pipeline:
             api_provider=self.run_config.api_provider,
             answering_model=self.run_config.answering_model,
             full_context=self.run_config.full_context
+            ,
+            is_chat_bot=self.run_config.is_chat_bot
         )
 
         output_path = self._get_next_available_filename(self.paths.answers_file_path)
@@ -323,6 +327,8 @@ class Pipeline:
             api_provider=self.run_config.api_provider,
             answering_model=self.run_config.answering_model,
             full_context=self.run_config.full_context
+            ,
+            is_chat_bot=self.run_config.is_chat_bot
         )
 
         if self.run_config.cached_processing_result_file:
@@ -345,7 +351,7 @@ class Pipeline:
             questions=questions,
             pipeline_answers=pipeline_answers,
             true_answers=true_answers,
-            model="o3-mini-2025-01-31"
+            model="gpt-5.4-mini"
         )
 
         scores = [item.get("score", 0.0) for item in similarity_results if item.get("score") is not None]
@@ -376,6 +382,8 @@ class Pipeline:
             api_provider=self.run_config.api_provider,
             answering_model=self.run_config.answering_model,
             full_context=self.run_config.full_context
+            ,
+            is_chat_bot=self.run_config.is_chat_bot
         )
 
         if self.run_config.cached_processing_result_file:
@@ -430,6 +438,51 @@ class Pipeline:
             "answer_similarity": answer_similarity,
             "retrieval_quality": retrieval_quality
         }
+
+    def answer_question(self, question: str, messages_context: list[str] | None = None) -> str:
+        """
+        Answer a single chat question using RAG.
+        Currently uses only the latest message text as a question.
+        Returns (answer_text, references) so references can be appended in future.
+        """
+        if not question or not question.strip():
+            return "Пожалуйста, напиши вопрос по поступлению во ВШЭ."
+
+        if self._chat_questions_processor is None:
+            self._chat_questions_processor = QuestionsProcessor(
+                vector_db_dir=self.paths.vector_db_dir,
+                documents_dir=self.paths.documents_dir,
+                questions_file_path=None,
+                new_challenge_pipeline=True,
+                subset_path=self.paths.subset_path,
+                parent_document_retrieval=self.run_config.parent_document_retrieval,
+                llm_reranking=self.run_config.llm_reranking,
+                llm_reranking_sample_size=self.run_config.llm_reranking_sample_size,
+                top_n_retrieval=self.run_config.top_n_retrieval,
+                parallel_requests=1,
+                api_provider=self.run_config.api_provider,
+                answering_model=self.run_config.answering_model,
+                full_context=self.run_config.full_context,
+                is_chat_bot=True
+            )
+
+        answer_dict = self._chat_questions_processor.process_question(question)
+        answer_text = answer_dict.get("final_answer") or "Не удалось получить ответ. Попробуй переформулировать вопрос."
+        references = answer_dict.get("references", [])
+        reasoning_process = answer_dict.get("reasoning_process", "")
+
+        log_path = self.paths.root_path / "chat_bot_answers.jsonl"
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_line = {
+                "question": question,
+                "answer": answer_text,
+                "references": references,
+                "messages_context": messages_context or [question],
+                "reasoning_process": reasoning_process
+            }
+            log_file.write(json.dumps(log_line, ensure_ascii=False) + "\n")
+
+        return answer_text
 
     @staticmethod
     def get_weighted_avg(scores: list[float]) -> float:
@@ -518,6 +571,28 @@ max_nst_5m_config = RunConfig(
     answering_model="gpt-5.4-mini",
     config_suffix="_max_nst_5m"
 )
+
+chat_bot_conf = RunConfig(
+    is_chat_bot=True,
+    use_serialized_tables=True,
+    parent_document_retrieval=True,
+    llm_reranking=True,
+    parallel_requests=25,
+    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = 5.4-mini",
+    answering_model="gpt-5.4-mini",
+    config_suffix="_max_nst_5m"
+)
+
+max_st_5m_config = RunConfig(
+    use_serialized_tables=True,
+    parent_document_retrieval=True,
+    llm_reranking=True,
+    parallel_requests=25,
+    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = 5.4-mini",
+    answering_model="gpt-5.4-mini",
+    config_suffix="_max_nst_5m"
+)
+
 max_st_o3m_config = RunConfig(
     use_serialized_tables=True,
     parent_document_retrieval=True,
@@ -628,7 +703,7 @@ configs = {"base": base_config,
 # You can also change the run_config to try out different configurations
 if __name__ == "__main__":
     root_path = here() / "data" / "test_set"
-    pipeline = Pipeline(root_path, run_config=max_st_o3m_config)
+    pipeline = Pipeline(root_path, run_config=max_st_5m_config)
 
     # This method parses pdf reports into a jsons. It creates jsons in the debug/data_01_parsed_reports. These jsons used in the next steps.
     # It also stores raw output of docling in debug/data_01_parsed_reports_debug, these jsons contain a LOT of metadata, and not used anywhere
@@ -642,7 +717,7 @@ if __name__ == "__main__":
 
     # This method converts jsons from the debug/data_01_parsed_reports into much simpler jsons, that is a list of pages in markdown
     # New jsons can be found in debug/data_02_merged_reports
-    # pipeline.merge_documents()
+    #pipeline.merge_documents()
 
     # This method exports the reports into plain markdown format. They used only for review and for full text search config: gemini_thinking_config
     # New files can be found in debug/data_03_reports_markdown
@@ -667,6 +742,6 @@ if __name__ == "__main__":
     # Questions processing logic depends on the run_config
     # pipeline.process_questions()
 
-    #pipeline.evaluate_answers_similarity()
+    pipeline.evaluate_answers_similarity()
 
-    pipeline.evaluate_rag_quality()
+    #pipeline.evaluate_rag_quality()
