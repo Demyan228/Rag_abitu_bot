@@ -76,6 +76,8 @@ class HSEAdmissionTelegramBot:
             question=text,
             messages_context=[text],
         )
+        if answer == "N/A":
+            answer = "Я не могу точно ответить на этот вопрос, попробуйте его уточнить(указать точно город, год и т.д), возможно среди моих документов нет, содержащих ответ"
         self.send_message(chat_id, answer)
 
     def run(self):
